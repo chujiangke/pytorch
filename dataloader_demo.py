@@ -20,7 +20,6 @@ def plot_curve(data):
     plt.show()
  
 def plot_image(img, label, name):#把图片和对应的标签显示出来
- 
     fig = plt.figure()
     for i in range(6):
         plt.subplot(2, 3, i + 1)
@@ -30,7 +29,7 @@ def plot_image(img, label, name):#把图片和对应的标签显示出来
         plt.xticks([])
         plt.yticks([])
     plt.show()
- 
+
 def one_hot(label, depth=10):
     out = torch.zeros(label.size(0), depth)
     idx = torch.LongTensor(label).view(-1, 1)
