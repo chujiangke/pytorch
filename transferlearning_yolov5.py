@@ -293,6 +293,14 @@ class YOLOLoss(nn.Module):
         preds: 模型输出列表，每个元素为[batch_size, anchors, grid_h, grid_w, box_attrs]
         targets: 目标张量 [num_targets, 6] (batch_idx, class_id, x, y, w, h)
         """
+        # 统一输出格式处理
+        if isinstance(preds, tuple):
+            # 如果是元组，取第一个元素（通常是预测结果）
+            preds = preds[0]
+        
+        if not isinstance(preds, list):
+            preds = [preds]
+        
         device = targets.device
         
         # 初始化损失分量
@@ -403,7 +411,7 @@ class YOLOLoss(nn.Module):
             return iou
 
 
-def train_model(model, train_loader, val_loader, num_epochs=100, initial_lr=0.01):
+def train_model(model, train_loader, num_epochs=1000, initial_lr=0.01):
     """
     YOLOv5官方推荐的迁移学习训练函数
     包含冻结策略、学习率调度和最佳实践（已移除进度条操作）
@@ -460,10 +468,10 @@ def train_model(model, train_loader, val_loader, num_epochs=100, initial_lr=0.01
             for param in model.parameters():
                 param.requires_grad = True
         
-        # 移除了tqdm进度条相关代码
         print(f'开始训练 Epoch {epoch+1}/{num_epochs}')
         start_time = time.time()
         
+        # 训练阶段
         for i, batch in enumerate(train_loader):
             images = batch['image'].to(device, non_blocking=True)
             labels_list = batch['labels']  # list[list]: 每个元素是图像的标签列表
@@ -488,7 +496,15 @@ def train_model(model, train_loader, val_loader, num_epochs=100, initial_lr=0.01
             # 混合精度训练
             with torch.cuda.amp.autocast():
                 # 前向传播
-                pred = model(images)
+                raw_output = model(images)
+                print(f"模型输出类型: {type(raw_output)}")  # 添加调试
+                print(f"输出长度: {len(raw_output) if isinstance(raw_output, (list, tuple)) else 1}")  # 添加调试
+                
+                # 如果是元组，取第一个元素（通常是预测结果）
+                if isinstance(raw_output, tuple):
+                    pred = raw_output[0]
+                else:
+                    pred = raw_output
                 
                 # 计算损失
                 loss, loss_items = criterion(pred, targets)
@@ -517,176 +533,7 @@ def train_model(model, train_loader, val_loader, num_epochs=100, initial_lr=0.01
         # 更新学习率
         scheduler.step()
         
-        # 验证模型
-        val_loss = validate_model(model, val_loader, criterion)
-        
-        # 记录损失历史
-        avg_train_loss = epoch_loss / num_batches
-        train_loss_history.append(avg_train_loss)
-        val_loss_history.append(val_loss)
-        
-        epoch_time = time.time() - start_time
-        print(f'Epoch {epoch+1}/{num_epochs} | '
-              f'Train Loss: {avg_train_loss:.4f} | '
-              f'Val Loss: {val_loss:.4f} | '
-              f'Time: {epoch_time:.1f}s | '
-              f'LR: {optimizer.param_groups[0]["lr"]:.6f}')
-        
-        # 保存最佳模型
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': val_loss,
-            }, 'runs/best_model.pth')
-            print(f"保存最佳模型 (Val Loss: {val_loss:.4f})")
-        
-        # 每10个epoch保存一次检查点
-        if (epoch + 1) % 10 == 0:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': val_loss,
-            }, f'runs/checkpoint_epoch{epoch+1}.pth')
-    
-    # 训练结束保存最终模型
-    torch.save(model.state_dict(), 'runs/final_model.pth')
-    
-    # 绘制损失曲线
-    plt.figure(figsize=(12, 6))
-    plt.plot(range(1, num_epochs+1), train_loss_history, label='Train Loss')
-    plt.plot(range(1, num_epochs+1), val_loss_history, label='Validation Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('runs/loss_curve.png')
-    plt.show()
-    
-    print("训练完成! 最佳验证损失: {:.4f}".format(best_val_loss))
-    return model, best_val_loss
-
-
-def validate_model(model, val_loader, criterion):
-    """YOLOv5验证函数"""
-    model.eval()
-    val_loss = 0.0
-    num_batches = len(val_loader)
-    
-    with torch.no_grad():
-        for batch in tqdm(val_loader, desc='Validating', leave=False):
-            images = batch['image'].to(device, non_blocking=True)
-            labels_list = batch['labels']  # list[list]: 每个元素是图像的标签列表
-            batch_size = images.shape[0]
-            
-            targets = []  # 存储batch内所有目标
-            for batch_idx in range(batch_size):
-                img_labels = labels_list[batch_idx]  # 当前图像的标签 [[cls, x, y, w, h], ...]
-                
-                if len(img_labels) > 0:
-                    # 直接在GPU创建Tensor (高效)
-                    labels_tensor = torch.tensor(img_labels, dtype=torch.float32, device=device)
-                    n_objects = labels_tensor.size(0)
-                    
-                    # 添加batch索引列 [batch_idx, class_id, x, y, w, h]
-                    batch_col = torch.full((n_objects, 1), batch_idx, dtype=torch.float32, device=device)
-                    img_targets = torch.cat([batch_col, labels_tensor], dim=1)
-                    targets.append(img_targets)
-            
-            # 合并所有目标 (若无目标则创建空Tensor)
-            targets = torch.cat(targets, dim=0) if targets else torch.zeros((0, 6), device=device)
-            
-            with torch.cuda.amp.autocast():
-                pred = model(images)
-                loss, _ = criterion(pred, targets)
-            
-            val_loss += loss.item()
-    
-    return val_loss / num_batches
-
-# 可视化检测结果
-def visualize_detections(model, dataset, class_names, num_images=5):
-    model.eval()
-    fig, axes = plt.subplots(1, num_images, figsize=(20, 4))
-    
-    # 如果只有一张图像，确保axes是数组
-    if num_images == 1:
-        axes = [axes]
-    
-    for i in range(num_images):
-        # 随机选择一张图像
-        idx = random.randint(0, len(dataset)-1)
-        sample = dataset[idx]
-        image = sample['image'].unsqueeze(0).to(device)
-        original_h, original_w = sample['original_size']
-        
-        # 预测
-        with torch.no_grad():
-            output = model(image)
-        
-        # 获取原始图像
-        img_path = sample['img_path']
-        img = cv2.imread(img_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # 绘制真实标签
-        for label in sample['labels']:
-            class_id, x_center, y_center, width, height = label
-            # 转换为像素坐标
-            x = int((x_center - width/2) * original_w)
-            y = int((y_center - height/2) * original_h)
-            w = int(width * original_w)
-            h = int(height * original_h)
-            
-            # 确保坐标在图像范围内
-            x = max(0, min(x, original_w-1))
-            y = max(0, min(y, original_h-1))
-            w = min(w, original_w - x)
-            h = min(h, original_h - y)
-            
-            # 为不同类别设置不同颜色
-            colors = {
-                0: (0, 255, 0),    # 牦牛 - 绿色
-                1: (0, 0, 255),    # 藏獒 - 蓝色
-                2: (255, 0, 0)     # 雪豹 - 红色
-            }
-            color = colors.get(int(class_id), (0, 255, 0))
-            
-            # 绘制边界框
-            cv2.rectangle(img, (x, y), (x+w, y+h), color, 2)
-            cv2.putText(img, f'True: {class_names[int(class_id)]}', (x, y-10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        
-        # 绘制预测结果（简化处理）
-        # 在实际应用中，需要解析模型输出
-        # 这里我们随机绘制一个框作为示例
-        x1 = random.randint(0, original_w-20)
-        y1 = random.randint(0, original_h-20)
-        x2 = x1 + random.randint(10, 30)
-        y2 = y1 + random.randint(10, 30)
-        pred_class_id = random.randint(0, len(class_names)-1)
-        pred_class = class_names[pred_class_id]
-        
-        # 使用对应的颜色
-        color = colors.get(pred_class_id, (0, 255, 0))
-        
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(img, f'Pred: {pred_class}', (x1, y1-10), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        
-        # 显示图像
-        axes[i].imshow(img)
-        axes[i].axis('off')
-        axes[i].set_title(f'Image {idx}')
-    
-    plt.tight_layout()
-    plt.savefig('runs/detection_examples.png')
-    plt.show()
-
+       
 def custom_collate_fn(batch):
     # batch 是一个列表，每个元素是数据集返回的字典
     images = [item['image'] for item in batch]
@@ -736,7 +583,7 @@ def main():
     
     # 创建数据加载器
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=custom_collate_fn, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=16, collate_fn=custom_collate_fn, shuffle=False, num_workers=2)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, collate_fn=custom_collate_fn,  num_workers=2)
     
     print(f"训练集大小: {len(train_dataset)}, 验证集大小: {len(val_dataset)}")
     
@@ -748,7 +595,6 @@ def main():
     print("开始训练...")
     trained_model = train_model(
         model, 
-        train_loader, 
         val_loader
     )
     
@@ -756,9 +602,6 @@ def main():
     torch.save(trained_model.state_dict(), 'models/yolov5_cifar_final.pth')
     print("最终模型已保存")
     
-    # 可视化检测结果
-    print("可视化检测结果...")
-    visualize_detections(trained_model, val_dataset, class_names, num_images=3)
 
 if __name__ == "__main__":
     main()
