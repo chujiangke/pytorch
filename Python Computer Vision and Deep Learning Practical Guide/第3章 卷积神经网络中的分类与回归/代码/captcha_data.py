@@ -76,7 +76,6 @@ class CaptchaData(Dataset):
         label_onehot = torch.zeros(4, 36)
         label_onehot.scatter_(1, label, 1)
         label = label_onehot.view(-1)
-
         return image_tensor, label
 
     def _numerical(self, chars):
