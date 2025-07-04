@@ -1,7 +1,11 @@
+import sys
+import os
+
+
 import torch
 from torch import nn, optim
-from chaptcha_model import net
-from chaptcha_data import dataloader, val_loader
+from captcha_model import net
+from captcha_data import dataloader, val_loader
 from tqdm import tqdm
 
 epoch_lr = [
@@ -10,7 +14,8 @@ epoch_lr = [
     (100, 0.001),
     (100, 0.0001),
 ]  # [(300,0.05),(100,0.001),(100,0.0001)]
-device = torch.device("cuda:0")
+# 自动检测GPU可用性并选择设备
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 criteron = nn.MultiLabelSoftMarginLoss()
 
 

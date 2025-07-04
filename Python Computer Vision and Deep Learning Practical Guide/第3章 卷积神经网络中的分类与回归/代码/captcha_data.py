@@ -102,11 +102,13 @@ class CaptchaData(Dataset):
 data = CaptchaData(char_list, num=10000)
 dataloader = DataLoader(
     data, batch_size=128, shuffle=True, num_workers=4
-)  # num_worders 多进程
+)  
+
 val_data = CaptchaData(char_list, num=2000)
 val_loader = DataLoader(
     val_data, batch_size=256, shuffle=True, num_workers=4
-)  # num_worders 多进程
+)  
+
 if __name__ == "__main__":
     # 可以通过如下方式从数据集中获取图片和对应的标签：
     img, label = data[10]

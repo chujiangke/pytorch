@@ -1,6 +1,6 @@
-from chaptcha_model import net
-from chaptcha_data import val_data, char_list
-from chaptcha_train import device
+from captcha_model import net
+from captcha_data import val_data, char_list
+from captcha_train import device
 import matplotlib.pyplot as plt
 from torchvision import transforms
 import torch
