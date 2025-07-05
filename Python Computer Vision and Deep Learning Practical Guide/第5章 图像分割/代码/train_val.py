@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os.path as osp
-
+import os
 from data import SegmentationData
 from transform import TrainTransform, TestTransform
 from model import ResNet18Unet
@@ -75,6 +75,10 @@ def train():
                 )
             if test_loss < best_loss:
                 best_loss = test_loss
+                # 确保目录存在
+                dir_path = os.path.dirname(checkpoint)
+                if dir_path:  # 避免空路径情况
+                    os.makedirs(dir_path, exist_ok=True)  # 递归创建目录
                 torch.save(
                     {"params": net.state_dict(), "loss": test_loss}, checkpoint
                 )
