@@ -13,8 +13,8 @@ from config import device, checkpoint, batch_size, epoch_lr
 
 def train():
     net = ResNet18Unet().to(device)
-    trainset = SegmentationData(subset="train", transform=TrainTransform)
-    testset = SegmentationData(subset="test", transform=TestTransform)
+    trainset = SegmentationData(subset="train", transform=TrainTransform())
+    testset = SegmentationData(subset="test", transform=TestTransform())
     trainloader = DataLoader(
         trainset, batch_size=batch_size, shuffle=True, num_workers=4
     )

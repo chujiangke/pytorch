@@ -72,7 +72,7 @@ class Mirror:
 
 
 class TrainTransform:
-    def __init__(self, size=300):
+    def __init__(self, size=320):
         self.size = size
         self.augment = Compose(
             [
@@ -91,12 +91,12 @@ class TrainTransform:
 
 
 class TestTransform:
-    def __init__(self, size=300):
+    def __init__(self, size=320):
         self.size = size
         self.augment = Compose(
             [ToArraySegment(), Resize(self.size), ToTensorSegment()]
         )
 
-    def __call__(self, img, boxes):
+    def __call__(self, img, mask):
         img, mask = self.augment(img, mask)
         return img, mask
